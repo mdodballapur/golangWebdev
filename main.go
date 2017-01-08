@@ -1,6 +1,6 @@
 package main
 
-import ("fmt"
+import (
 	"net/http"
 	"html/template"
 	"encoding/json"
@@ -9,11 +9,8 @@ import ("fmt"
 	"net/url"
 	"encoding/xml"
 	"io/ioutil"
+	"github.com/codegangsta/negroni"
 )
-
-func handlerootroute(w http.ResponseWriter, req *http.Request){
-	fmt.Fprintf(w, "Welcome to Web Development")
-}
 
 type Page struct {
 	Name string
@@ -82,8 +79,6 @@ func main(){
 		var book ClassifyBookResponse
 		var err error
 
-		fmt.Printf("Adding book to sqlite3 database id:%s\n", r.FormValue("id"))
-
 		if book,err = find(r.FormValue("id")); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -94,21 +89,18 @@ func main(){
 			return
 		}
 
-		fmt.Printf("Database active, adding values to it\n")
-
 		_, err = db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
 			nil, book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
 
 		if err != nil {
-			fmt.Printf("Error adding values to database %s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
 		}
 
-		fmt.Printf("Done adding values to database")
 	})
 
-	http.ListenAndServe(":8080", mux)
+	n := negroni.Classic()
+	n.UseHandler(mux)
+	n.Run(":8080")
 }
 
 func find (id string) (ClassifyBookResponse, error) {
@@ -143,9 +135,7 @@ func classifyAPI(classifyUrl string) ([]byte, error) {
 	var resp *http.Response
 	var err error
 
-	fmt.Printf("classifyUrl: %s", classifyUrl)
 	if resp, err = http.Get(classifyUrl); err != nil {
-		fmt.Printf("http error: %s", err)
 		return []byte{}, err
 	}
 
