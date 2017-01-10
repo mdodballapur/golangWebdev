@@ -1,0 +1,55 @@
+= doctype html
+html lang=en
+  head
+    = css
+      #search-results tr:hover {
+        background-color: lightgrey;
+        cursor: pointer;
+      }
+  body
+    form id="search-form" onsubmit="return false"
+      input type="submit" value="Search" onclick="submitSearch()"
+      input name="search"
+
+    table width="100%"
+      thead
+        tr style="text-align: left;"
+          th width="40%" Title
+          th width="30%" Author
+          th width="10%" Year
+          th width="20%" ID
+
+      tbody id="search-results"
+
+    script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"
+    = javascript
+      function submitSearch() {
+      console.log("submitting search")
+      $.ajax({
+      url: "/search",
+      method: "POST",
+      data: $("#search-form").serialize(),
+      success: function(rawData){
+      var parsed = JSON.parse(rawData)
+      if (!parsed) return;
+
+      var searchResults = $("#search-results");
+      searchResults.empty()
+
+      parsed.forEach(function(result){
+      var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year+ "</td><td>" + result.ID + "</td></tr>");
+      searchResults.append(row);
+
+      row.on("click", function(){
+      console.log("Adding id to database %s", result.ID)
+      $.ajax({
+      url: "/books/add?id=" + result.ID,
+      method: "GET"
+      })
+      })
+      });
+      }
+      });
+      console.log("manohar")
+      return false;
+      }
