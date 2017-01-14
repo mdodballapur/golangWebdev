@@ -6,50 +6,101 @@ html lang=en
         background-color: lightgrey;
         cursor: pointer;
       }
+
+      #page-switcher {
+        width: 100%;
+        text-allign: center;
+      }
+
+      #page-switcher button {
+        font-size: 24px;
+        font-weight: bold;
+        margin: 1em;
+        padding: .3em;
+      }
   body
-    form id="search-form" onsubmit="return false"
-      input type="submit" value="Search" onclick="submitSearch()"
-      input name="search"
+    #page-switcher
+      button onclick="showViewPage()" View Library
+      button onclick="showSearchPage()" Add books
 
-    table width="100%"
-      thead
-        tr style="text-align: left;"
-          th width="40%" Title
-          th width="30%" Author
-          th width="10%" Year
-          th width="20%" ID
+    #search-page style="display: none;"
+      form id="search-form" onsubmit="return false"
+        input type="submit" value="Search" onclick="submitSearch()"
+        input name="search"
 
-      tbody id="search-results"
+      table width="100%"
+        thead
+          tr style="text-align: left;"
+            th width="40%" Title
+            th width="30%" Author
+            th width="10%" Year
+            th width="20%" ID
+
+        tbody id="search-results"
+
+    #view-page
+      table width=100%
+        thead
+          tr style="text-align: left;"
+            th width="45%" Title
+            th width="35%" Author
+            th width="20%" Classification
+
+        tbody id="view-results"
+          {{range .Books}}
+            tr
+              td {{.Title}}
+              td {{.Author}}
+              td {{.Classification}}
+          {{end}}
 
     script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"
     = javascript
-      function submitSearch() {
-      console.log("submitting search")
-      $.ajax({
-      url: "/search",
-      method: "POST",
-      data: $("#search-form").serialize(),
-      success: function(rawData){
-      var parsed = JSON.parse(rawData)
-      if (!parsed) return;
 
-      var searchResults = $("#search-results");
-      searchResults.empty()
-
-      parsed.forEach(function(result){
-      var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year+ "</td><td>" + result.ID + "</td></tr>");
-      searchResults.append(row);
-
-      row.on("click", function(){
-      console.log("Adding id to database %s", result.ID)
-      $.ajax({
-      url: "/books/add?id=" + result.ID,
-      method: "GET"
-      })
-      })
-      });
+      function showSearchPage() {
+        $("#search-page").show()
+        $("#view-page").hide()
       }
-      });
-      console.log("manohar")
-      return false;
+
+      function showViewPage() {
+        $("#search-page").hide()
+        $("#view-page").show()
+      }
+
+      function submitSearch() {
+        console.log("submitting search")
+        $.ajax({
+          url: "/search",
+          method: "POST",
+          data: $("#search-form").serialize(),
+          success: function(rawData){
+            var parsed = JSON.parse(rawData)
+            if (!parsed) return;
+            var searchResults = $("#search-results");
+            searchResults.empty()
+            parsed.forEach(function(result){
+              var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author +
+                          "</td><td>" + result.Year+ "</td><td>" + result.ID + "</td></tr>");
+              searchResults.append(row);
+              row.on("click", function(){
+                console.log("Adding id to database %s", result.ID)
+                $.ajax({
+                  url: "/books/add?id=" + result.ID,
+                  method: "GET",
+                  success: function(rawData) {
+                    console.log("Successfully added ID")
+                    var bk = JSON.parse(rawData);
+                    if (!parsed) return;
+                    var row = "<tr><td>" + bk.Title + "</td><td>" + bk.Author +
+                                "</td><td>" + bk.Year+ "</td><td>" + bk.Classification + "</td></tr>";
+                    console.log("adding row ",row)
+                    $("#view-results").append(row);
+                  }
+                })
+              })
+            });
+          }
+        });
+        console.log("manohar")
+        return false;
       }

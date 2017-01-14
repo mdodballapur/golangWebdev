@@ -10,11 +10,19 @@ import (
 	"io/ioutil"
 	"github.com/codegangsta/negroni"
 	"github.com/yosssi/ace"
+	"log"
+	"fmt"
 )
 
+type Book struct {
+	PK int
+	Title string
+	Author string
+	Classification string
+}
+
 type Page struct {
-	Name string
-	DBStatus bool
+	Books []Book
 }
 
 type ClassifyResponse struct {
@@ -30,9 +38,8 @@ type ClassifyBookResponse struct {
 
 	Classification struct {
 		MostPopular string `xml:"sfa,attr"`
-	} `xml:"recommendataions>ddc>mostPopular"`
+	} `xml:"recommendations>ddc>mostPopular"`
 }
-
 
 type SearchResult struct {
 	Title string `xml:"title,attr"`
@@ -40,6 +47,7 @@ type SearchResult struct {
 	Year string `xml:"hyr,attr"`
 	ID string `xml:"owi,attr"`
 }
+
 
 var db *sql.DB
 
@@ -53,10 +61,10 @@ func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 }
 
 func main(){
-	
+
 	db, _ = sql.Open("sqlite3", "dev.db")
 	mux := http.NewServeMux()
-	
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
 		template, err := ace.Load("templates/index", "", nil)
 
@@ -64,11 +72,15 @@ func main(){
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		p := Page{Name: "Gopher"}
-		if name := r.FormValue("name"); name != "" {
-			p.Name = name
+		p := Page{Books: []Book{}}
+
+		rows, _ := db.Query("select pk, title, author, classification from books")
+
+		for rows.Next() {
+			var b Book
+			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification)
+			p.Books = append(p.Books, b)
 		}
-		p.DBStatus = db.Ping() == nil
 
 		if err := template.Execute(w, p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,25 +99,42 @@ func main(){
 		if err = encoder.Encode(results); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		
 	})
 
 	mux.HandleFunc("/books/add", func(w http.ResponseWriter, r *http.Request){
-
 		var book ClassifyBookResponse
 		var err error
 
-		if book,err = find(r.FormValue("id")); err != nil {
+		id := r.FormValue("id")
+		log.Print("Adding id: ", id)
+
+		if book,err = find(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_, err = db.Exec("insert into books (pk, title, author, id, classification) values (?, ?, ?, ?, ?)",
-			nil, book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
+
+		row := fmt.Sprintf("insert into books (pk, title, author, id, classification) values (NULL, \"%s\", \"%s\", \"%s\", \"%s\")",
+												book.BookData.Title, book.BookData.Author,book.BookData.ID,book.Classification.MostPopular)
+
+		log.Print("inserting row: ", row)
+		result, err := db.Exec(row)
 
 		if err != nil {
+			log.Print	("Unable to insert row into database")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
+		pk, _ := result.LastInsertId()
+		b := Book {
+			PK: int(pk),
+			Title: book.BookData.Title,
+			Author: book.BookData.Author,
+			Classification: book.Classification.MostPopular,
+		}
+
+		if err = json.NewEncoder(w).Encode(b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 
 	n := negroni.Classic()
@@ -124,12 +153,16 @@ func find (id string) (ClassifyBookResponse, error) {
 	}
 
 	err = xml.Unmarshal(body, &c)
+	if err != nil {
+		log.Print("Unable to unmarshal data about book")
+		return ClassifyBookResponse{}, err
+	}
 	return c, err
 }
 
 func search(query string) ([]SearchResult, error) {
 	var c ClassifyResponse
-	
+
 	classifyUrl := "http://classify.oclc.org/classify2/Classify?&summary=true&title=" + url.QueryEscape(query)
 
 	body, err := classifyAPI(classifyUrl)
@@ -149,11 +182,7 @@ func classifyAPI(classifyUrl string) ([]byte, error) {
 	if resp, err = http.Get(classifyUrl); err != nil {
 		return []byte{}, err
 	}
-
 	defer resp.Body.Close()
 
 	return ioutil.ReadAll(resp.Body)
 }
-
-
-
