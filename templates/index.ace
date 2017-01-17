@@ -2,7 +2,8 @@
 html lang=en
   head
     = css
-      #search-results tr:hover {
+      #search-results tr:hover,
+      #view-results tr:hover {
         background-color: lightgrey;
         cursor: pointer;
       }
@@ -17,6 +18,13 @@ html lang=en
         font-weight: bold;
         margin: 1em;
         padding: .3em;
+      }
+
+      .delete-btn {
+        color: white;
+        background-color: #d9534f;
+        border-color: #d43f3a;
+        border-radius: 8px;
       }
   body
     #page-switcher
@@ -44,18 +52,32 @@ html lang=en
           tr style="text-align: left;"
             th width="45%" Title
             th width="35%" Author
-            th width="20%" Classification
+            th width="15%" Classification
+            th width="5%"
 
         tbody id="view-results"
           {{range .Books}}
-            tr
+            tr id="book-row-{{.PK}}"
               td {{.Title}}
               td {{.Author}}
               td {{.Classification}}
+              td
+                button.delete-btn onclick="deleteBook({{.PK}})" Delete
           {{end}}
 
     script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"
     = javascript
+
+      function deleteBook(pk) {
+        $.ajax({
+          method: "DELETE",
+          url: "/books/" + pk,
+          success: function(){
+            console.log("removing pk " + pk)
+            $("#book-row-" + pk).remove();
+          }
+        })
+      }
 
       function showSearchPage() {
         $("#search-page").show()
@@ -86,13 +108,15 @@ html lang=en
                 console.log("Adding id to database %s", result.ID)
                 $.ajax({
                   url: "/books/add?id=" + result.ID,
-                  method: "GET",
+                  method: "PUT",
                   success: function(rawData) {
                     console.log("Successfully added ID")
                     var bk = JSON.parse(rawData);
                     if (!parsed) return;
-                    var row = "<tr><td>" + bk.Title + "</td><td>" + bk.Author +
-                                "</td><td>" + bk.Year+ "</td><td>" + bk.Classification + "</td></tr>";
+                    var row = "<tr id='book-row-" + bk.PK + "'><td>" + bk.Title + "</td><td>" + bk.Author +
+                                "</td><td>" + bk.Year+ "</td><td>" + bk.Classification +
+                                "</td><button class='delete-btn' onclick='deleteBook(" + bk.PK + ")'>Delete</button></td></tr>";
+
                     console.log("adding row ",row)
                     $("#view-results").append(row);
                   }
