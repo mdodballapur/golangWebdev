@@ -113,9 +113,10 @@ html lang=en
                     console.log("Successfully added ID")
                     var bk = JSON.parse(rawData);
                     if (!parsed) return;
+
                     var row = "<tr id='book-row-" + bk.PK + "'><td>" + bk.Title + "</td><td>" + bk.Author +
-                                "</td><td>" + bk.Year+ "</td><td>" + bk.Classification +
-                                "</td><button class='delete-btn' onclick='deleteBook(" + bk.PK + ")'>Delete</button></td></tr>";
+                                "</td><td>" + bk.Classification +
+                                "</td><td><button class='delete-btn' onclick='deleteBook(" + bk.PK + ")'>Delete</button></td></tr>";
 
                     console.log("adding row ",row)
                     $("#view-results").append(row);
