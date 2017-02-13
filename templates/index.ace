@@ -3,7 +3,8 @@ html lang=en
   head
     = css
       #search-results tr:hover,
-      #view-results tr:hover {
+      #view-results tr:hover,
+      #view-page th:hover{
         background-color: lightgrey;
         cursor: pointer;
       }
@@ -50,9 +51,9 @@ html lang=en
       table width=100%
         thead
           tr style="text-align: left;"
-            th width="45%" Title
-            th width="35%" Author
-            th width="15%" Classification
+            th width="45%" onclick=sortBooks('title') Title
+            th width="35%" onclick=sortBooks('author') Author
+            th width="15%" onclick=sortBooks('classification') Classification
             th width="5%"
 
         tbody id="view-results"
@@ -68,6 +69,13 @@ html lang=en
     script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"
     = javascript
 
+      function appendBook(bk) {
+        var row = "<tr id='book-row-" + bk.PK + "'><td>" + bk.Title + "</td><td>" + bk.Author +
+                  "</td><td>" + bk.Classification + "</td><td><button class='delete-btn' onclick='deleteBook(" + bk.PK + ")\'>Delete</button></td></tr>";
+        $("#view-results").append(row)
+      }
+
+
       function deleteBook(pk) {
         $.ajax({
           method: "DELETE",
@@ -78,6 +86,23 @@ html lang=en
           }
         })
       }
+
+      function sortBooks(columnName) {
+        $.ajax({
+          method: 'GET',
+          url: "/books?sortBy=" + columnName,
+          success: function(result) {
+              var books = JSON.parse(result);
+              if (!books) return;
+              $("#view-results").empty();
+
+              books.forEach(function(book) {
+                appendBook(book)
+              });
+          }
+        })
+      }
+
 
       function showSearchPage() {
         $("#search-page").show()
@@ -114,9 +139,7 @@ html lang=en
                     var bk = JSON.parse(rawData);
                     if (!parsed) return;
 
-                    var row = "<tr id='book-row-" + bk.PK + "'><td>" + bk.Title + "</td><td>" + bk.Author +
-                                "</td><td>" + bk.Classification +
-                                "</td><td><button class='delete-btn' onclick='deleteBook(" + bk.PK + ")'>Delete</button></td></tr>";
+                    appendBook(bk);
 
                     console.log("adding row ",row)
                     $("#view-results").append(row);

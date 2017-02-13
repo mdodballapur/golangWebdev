@@ -13,14 +13,17 @@ import (
 	gmux "github.com/gorilla/mux"
 	"log"
 	"fmt"
-
+	"strconv"
+	"gopkg.in/gorp.v1"
+	"errors"
 )
 
 type Book struct {
-	PK int
-	Title string
-	Author string
-	Classification string
+	PK int64 `db:"pk"`
+	Title string `db:"title"`
+	Author string	`db:"author"`
+	Classification string `db:"classification"`
+	ID string `db:"id"`
 }
 
 type Page struct {
@@ -52,9 +55,30 @@ type SearchResult struct {
 
 
 var db *sql.DB
+var dbmap *gorp.DbMap
+
+
+func initDB() error {
+	var err error
+
+	if db, err = sql.Open("sqlite3", "dev.db"); err != nil {
+		return errors.New("Database connection failed to open")
+	}
+
+	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
+
+	dbmap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
+	dbmap.CreateTablesIfNotExists()
+
+	return nil
+}
 
 func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
+	if db == nil {
+		http.Error(w, "Database connection not open", http.StatusInternalServerError)
+		return
+	}
 	if err := db.Ping(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -62,10 +86,32 @@ func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 	next(w, r)
 }
 
-func main(){
 
-	db, _ = sql.Open("sqlite3", "dev.db")
+func main(){
+	//db, _ = sql.Open("sqlite3", "dev.db")
+
 	mux := gmux.NewRouter()
+
+	mux.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request){
+		columnName := r.FormValue("sortBy")
+
+		if columnName != "title" && columnName != "author"  && columnName != "classification" {
+				http.Error(w, "Invalid column name", http.StatusBadRequest)
+				return
+		}
+
+		var b []Book
+		if _, err := dbmap.Select(&b, "select * from books order by " + columnName); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := json.NewEncoder(w).Encode(b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	}).Methods("GET")
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
 		template, err := ace.Load("templates/index", "", nil)
@@ -74,17 +120,17 @@ func main(){
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
+		fmt.Println("running selct * from books")
 		p := Page{Books: []Book{}}
-
-		rows, _ := db.Query("select pk, title, author, classification from books")
-
-		for rows.Next() {
-			var b Book
-			rows.Scan(&b.PK, &b.Title, &b.Author, &b.Classification)
-			p.Books = append(p.Books, b)
+		if _, err := dbmap.Select(&p.Books, "select * from books;"); err != nil {
+		//p := Book{}
+		//if vl, err := dbmap.Select(&p, "select * from books;"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-
+		fmt.Println("Successfully ran select * From books")
 		if err := template.Execute(w, p); err != nil {
+		//if err := template.Execute(w, vl); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}).Methods("GET")
@@ -115,23 +161,17 @@ func main(){
 			return
 		}
 
-		row := fmt.Sprintf("insert into books (pk, title, author, id, classification) values (NULL, \"%s\", \"%s\", \"%s\", \"%s\")",
-												book.BookData.Title, book.BookData.Author,book.BookData.ID,book.Classification.MostPopular)
 
-		log.Print("inserting row: ", row)
-		result, err := db.Exec(row)
-
-		if err != nil {
-			log.Print	("Unable to insert row into database")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		pk, _ := result.LastInsertId()
 		b := Book {
-			PK: int(pk),
+			PK: -1,
 			Title: book.BookData.Title,
 			Author: book.BookData.Author,
 			Classification: book.Classification.MostPopular,
+		}
+
+		if err = dbmap.Insert(&b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		if err = json.NewEncoder(w).Encode(b); err != nil {
@@ -140,15 +180,18 @@ func main(){
 	}).Methods("PUT")
 
 	mux.HandleFunc("/books/{pk}", func(w http.ResponseWriter, r *http.Request){
-		if _,err := db.Exec("delete from books where pk = ?", gmux.Vars(r)["pk"]); err != nil {
+		pk, _ := strconv.ParseInt(gmux.Vars(r)["pk"], 10, 64)
+		if _,err := dbmap.Delete(&Book{pk, "", "", "", ""}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}).Methods("Delete")
 
-
-
+	if err := initDB(); err != nil {
+		fmt.Println("%s", err)
+		return
+	}
 	n := negroni.Classic()
 	n.Use(negroni.HandlerFunc(verifyDatabase))
 	n.UseHandler(mux)
