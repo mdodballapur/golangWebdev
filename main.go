@@ -8,7 +8,9 @@ import (
 	"net/url"
 	"encoding/xml"
 	"io/ioutil"
-	"github.com/codegangsta/negroni"
+	"github.com/urfave/negroni"
+	"github.com/goincremental/negroni-sessions"
+	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/yosssi/ace"
 	gmux "github.com/gorilla/mux"
 	"log"
@@ -86,6 +88,18 @@ func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFun
 	next(w, r)
 }
 
+func getBookCollection(books *[]Book, sortCol string, w http.ResponseWriter) bool {
+	if sortCol != "title" && sortCol != "author"  && sortCol != "classification" {
+		sortCol = "pk"
+	}
+
+	if _, err := dbmap.Select(books, "select * from books order by " + sortCol); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
 
 func main(){
 	//db, _ = sql.Open("sqlite3", "dev.db")
@@ -93,24 +107,18 @@ func main(){
 	mux := gmux.NewRouter()
 
 	mux.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request){
-		columnName := r.FormValue("sortBy")
-
-		if columnName != "title" && columnName != "author"  && columnName != "classification" {
-				http.Error(w, "Invalid column name", http.StatusBadRequest)
-				return
-		}
-
 		var b []Book
-		if _, err := dbmap.Select(&b, "select * from books order by " + columnName); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		if !getBookCollection(&b, r.FormValue("sortBy"), w ) {
 			return
 		}
+
+		sessions.GetSession(r).Set("sortBy", r.FormValue("sortBy"))
 
 		if err := json.NewEncoder(w).Encode(b); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 	}).Methods("GET")
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
@@ -120,15 +128,18 @@ func main(){
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		fmt.Println("running selct * from books")
+		var sortColumn string
+
+		if sortBy := sessions.GetSession(r).Get("sortBy"); sortBy != nil {
+			sortColumn = sortBy.(string)
+		}
+
 		p := Page{Books: []Book{}}
-		if _, err := dbmap.Select(&p.Books, "select * from books;"); err != nil {
-		//p := Book{}
-		//if vl, err := dbmap.Select(&p, "select * from books;"); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		if !getBookCollection(&p.Books, sortColumn, w){
 			return
 		}
-		fmt.Println("Successfully ran select * From books")
+
 		if err := template.Execute(w, p); err != nil {
 		//if err := template.Execute(w, vl); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -193,6 +204,8 @@ func main(){
 		return
 	}
 	n := negroni.Classic()
+	n.Use(negroni.NewLogger())
+	n.Use(sessions.Sessions("go-for-web-dev", cookiestore.New([]byte("my-secret-123"))))
 	n.Use(negroni.HandlerFunc(verifyDatabase))
 	n.UseHandler(mux)
 	n.Run(":8080")
