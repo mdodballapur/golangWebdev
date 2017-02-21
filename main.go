@@ -30,6 +30,7 @@ type Book struct {
 
 type Page struct {
 	Books []Book
+	Filter string
 }
 
 type ClassifyResponse struct {
@@ -60,46 +61,6 @@ var db *sql.DB
 var dbmap *gorp.DbMap
 
 
-func initDB() error {
-	var err error
-
-	if db, err = sql.Open("sqlite3", "dev.db"); err != nil {
-		return errors.New("Database connection failed to open")
-	}
-
-	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
-
-	dbmap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
-	dbmap.CreateTablesIfNotExists()
-
-	return nil
-}
-
-func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-
-	if db == nil {
-		http.Error(w, "Database connection not open", http.StatusInternalServerError)
-		return
-	}
-	if err := db.Ping(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	next(w, r)
-}
-
-func getBookCollection(books *[]Book, sortCol string, w http.ResponseWriter) bool {
-	if sortCol != "title" && sortCol != "author"  && sortCol != "classification" {
-		sortCol = "pk"
-	}
-
-	if _, err := dbmap.Select(books, "select * from books order by " + sortCol); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return false
-	}
-
-	return true
-}
 
 func main(){
 	//db, _ = sql.Open("sqlite3", "dev.db")
@@ -109,7 +70,23 @@ func main(){
 	mux.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request){
 		var b []Book
 
-		if !getBookCollection(&b, r.FormValue("sortBy"), w ) {
+		if !getBookCollection(&b, getStringFromSession(r, "sortBy"),  r.FormValue("filter"), w ) {
+			return
+		}
+
+		sessions.GetSession(r).Set("Filter", r.FormValue("Filter"))
+
+		if err := json.NewEncoder(w).Encode(b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("GET").Queries("filter", "{filter:all|fiction|nonfiction}")
+
+
+	mux.HandleFunc("/books", func(w http.ResponseWriter, r *http.Request){
+		var b []Book
+
+		if !getBookCollection(&b, r.FormValue("sortBy"), getStringFromSession(r, "Filter"), w ) {
 			return
 		}
 
@@ -119,7 +96,7 @@ func main(){
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	}).Methods("GET")
+	}).Methods("GET").Queries("sortBy", "{sortBy:title|author|classification}")
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
 		template, err := ace.Load("templates/index", "", nil)
@@ -128,15 +105,9 @@ func main(){
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		var sortColumn string
+		p := Page{Books: []Book{}, Filter: getStringFromSession(r, "Filter")}
 
-		if sortBy := sessions.GetSession(r).Get("sortBy"); sortBy != nil {
-			sortColumn = sortBy.(string)
-		}
-
-		p := Page{Books: []Book{}}
-
-		if !getBookCollection(&p.Books, sortColumn, w){
+		if !getBookCollection(&p.Books, getStringFromSession(r, "sortBy"), getStringFromSession(r, "Filter"), w){
 			return
 		}
 
@@ -210,6 +181,64 @@ func main(){
 	n.UseHandler(mux)
 	n.Run(":8080")
 }
+
+func getStringFromSession(r *http.Request, key string) string {
+	var strVal string
+
+	if val := sessions.GetSession(r).Get(key); val  != nil {
+		strVal = val.(string)
+	}
+
+	return strVal
+}
+
+func initDB() error {
+	var err error
+
+	if db, err = sql.Open("sqlite3", "dev.db"); err != nil {
+		return errors.New("Database connection failed to open")
+	}
+
+	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
+
+	dbmap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
+	dbmap.CreateTablesIfNotExists()
+
+	return nil
+}
+
+func verifyDatabase(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+
+	if db == nil {
+		http.Error(w, "Database connection not open", http.StatusInternalServerError)
+		return
+	}
+	if err := db.Ping(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	next(w, r)
+}
+
+func getBookCollection(books *[]Book, sortCol string, filterByClass string, w http.ResponseWriter) bool {
+	if sortCol == "" {
+		sortCol = "pk"
+	}
+
+	var where string
+	if filterByClass == "fiction" {
+		where = "where classification between '800' and '900'"
+	} else if filterByClass == "nonfiction" {
+		where = "where classification not between '800' and '900'"
+	}
+	if _, err := dbmap.Select(books, "select * from books " + where + " order by " + sortCol); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
 
 func find (id string) (ClassifyBookResponse, error) {
 	var c ClassifyBookResponse
