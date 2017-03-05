@@ -13,6 +13,7 @@ import (
 	"github.com/goincremental/negroni-sessions/cookiestore"
 	"github.com/yosssi/ace"
 	gmux "github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"fmt"
 	"strconv"
@@ -28,9 +29,16 @@ type Book struct {
 	ID string `db:"id"`
 }
 
+type User struct {
+	Username string `db:"username"`
+	Secret []byte `db:"secret"`
+}
 type Page struct {
 	Books []Book
 	Filter string
+}
+type LoginPage struct {
+	Error string
 }
 
 type ClassifyResponse struct {
@@ -68,20 +76,52 @@ func main(){
 	mux := gmux.NewRouter()
 
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request){
-		template, err := ace.Load("templates/login", "", nil)
+		var p LoginPage
 
-		if r.FormValue("register") != "" || r.FormValue("login") != "" {
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
+		if r.FormValue("register") != "" {
+			secret, _ := bcrypt.GenerateFromPassword([]byte(r.FormValue("password")),
+																								bcrypt.DefaultCost)
+			user := User{r.FormValue("username"), secret}
+			if err := dbmap.Insert(&user); err != nil {
+				p.Error = err.Error()
+			} else {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+		} else if r.FormValue("login") != "" {
+			 user, err := dbmap.Get(User{}, r.FormValue("username"))
+
+			 msg := "got username : " + r.FormValue("username")
+			 fmt.Println(msg)
+
+			 if err != nil {
+				 fmt.Println("error unable to read user info from databse: ")
+				 p.Error = err.Error()
+			 } else if user == nil {
+				 msg := "user: " + r.FormValue("username") + " doesn't exist"
+				 fmt.Println(msg)
+				 p.Error = "No such user found: " + r.FormValue("username")
+			 } else {
+				 u := user.(*User)
+				 err = bcrypt.CompareHashAndPassword(u.Secret, []byte(r.FormValue("password")))
+				 if err != nil {
+					 p.Error = err.Error()
+				 } else {
+					 	http.Redirect(w, r, "/", http.StatusFound)
+						return
+				 	}
+
+			 }
 		}
 
+		template, err := ace.Load("templates/login", "", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
 		fmt.Println("loading login template")
 
-		if err := template.Execute(w, nil); err != nil {
+		if err := template.Execute(w, p); err != nil {
 		//if err := template.Execute(w, vl); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -223,6 +263,7 @@ func initDB() error {
 	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
 
 	dbmap.AddTableWithName(Book{}, "books").SetKeys(true, "pk")
+	dbmap.AddTableWithName(User{}, "users").SetKeys(false, "username")
 	dbmap.CreateTablesIfNotExists()
 
 	return nil
