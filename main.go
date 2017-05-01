@@ -41,6 +41,9 @@ type Page struct {
 type LoginPage struct {
 	Error string
 }
+type LoginPage struct {
+	Error string
+}
 
 type ClassifyResponse struct {
 	Results []SearchResult `xml:"works>work"`
