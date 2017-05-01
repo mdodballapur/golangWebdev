@@ -27,7 +27,13 @@ html lang=en
         border-color: #d43f3a;
         border-radius: 8px;
       }
+      #user-info {
+        text-allign: right;
+      }
   body
+    #user-info
+      div You are currently logged in as <b>{{.User}}</b>
+      a href="/logout" (Log out)
     #page-switcher
       button onclick="showViewPage()" View Library
       button onclick="showSearchPage()" Add books
